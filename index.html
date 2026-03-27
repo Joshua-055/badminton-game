@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Badminton</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <div id="game-container">
+        <div id="ui-layer">
+            <div id="score-board">
+                <span id="player-score" class="score">0</span>
+                <span class="divider">:</span>
+                <span id="ai-score" class="score">0</span>
+            </div>
+            
+            <div id="music-player" style="position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.4); backdrop-filter: blur(10px); color: #fff; padding: 10px 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 12px; font-size: 14px; z-index: 200; pointer-events: auto;">
+                <span id="bgm-name" style="color: #00f3ff; font-weight: bold; min-width: 100px; text-align: center;">Sport BGM 1</span>
+                <div style="display: flex; gap: 5px;">
+                    <button id="bgm-prev" style="padding: 5px; height: 30px; width: 30px; border-radius: 5px; background: rgba(255,255,255,0.1); font-size: 10px;">◀</button>
+                    <button id="bgm-next" style="padding: 5px; height: 30px; width: 30px; border-radius: 5px; background: rgba(255,255,255,0.1); font-size: 10px;">▶</button>
+                </div>
+            </div>
+            <div id="start-screen" class="glass-panel">
+                <h1>Neon Badminton</h1>
+                <p><b>W / 空格</b> 跳跃，<b>A / D</b> 移动</p>
+                <p><b>J 键</b> 挑球/轻打，<b>K 键</b> 杀球/重击 (发球同理)</p>
+                <div class="score-select">
+                    <button class="select-btn active" data-score="11">11 分制</button>
+                    <button class="select-btn" data-score="21">21 分制</button>
+                </div>
+                <div class="volume-control" style="margin-top: 20px; color:#fff;">
+                    <label style="font-size:16px;">🎵 音乐音量: </label>
+                    <input type="range" id="volume-slider" min="0" max="100" value="40" style="vertical-align: middle;">
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 25px;">
+                    <button id="start-btn" style="flex: 1;">开始游戏 (单机)</button>
+                    <button id="customize-btn" style="flex: 1; background: #444;">🎨 自定义外观</button>
+                </div>
+                <button id="mp-menu-btn" style="margin-top: 10px; background: #9c27b0; font-weight: bold;">双人联机对战</button>
+            </div>
+            
+            <div id="mp-screen" class="glass-panel hidden" style="width: 450px;">
+                <h2 style="font-size: 28px; margin-bottom: 20px;">🌐 联机大厅 (Lobby)</h2>
+                
+                <div class="lobby-controls" style="display:flex; gap:10px; margin-bottom:20px;">
+                    <button id="host-btn" style="flex:1; background:linear-gradient(135deg, #00ffaa, #00b377); color:#000; font-weight:bold; height: 50px;">创建房间</button>
+                    <button id="back-btn" style="flex:1; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.3); color:#fff; height: 50px;">返回主页</button>
+                </div>
+
+                <div id="host-info-area" class="hidden" style="margin-bottom: 20px; padding: 15px; background: rgba(0, 255, 170, 0.1); border: 1px solid #00ffaa; border-radius: 8px;">
+                    <span style="font-size: 14px; opacity: 0.8;">你的房间码:</span>
+                    <div id="host-info" style="font-size: 32px; font-family: monospace; font-weight: bold; color: #00ffaa; margin: 10px 0; letter-spacing: 2px;">----</div>
+                    <p style="font-size: 12px; color: #fff;">等待客机连接中...</p>
+                </div>
+
+                <div class="room-list-container" style="text-align: left; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 15px; max-height: 250px; overflow-y: auto;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="font-weight: bold; color: #fff; font-size: 14px;">可用房间列表 (最近):</span>
+                        <button id="refresh-rooms" style="padding: 2px 10px; font-size: 11px; background: #666; width: auto; height: 26px;">刷新</button>
+                    </div>
+                    <div id="room-list" style="display: flex; flex-direction: column; gap: 8px;">
+                        <!-- 房间项将通过 JS 渲染 -->
+                        <div class="room-item empty" style="text-align: center; padding: 20px; color: rgba(255,255,255,0.4); font-size: 13px;">
+                            暂未发现活跃房间，请手动输入 ->
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- 自定义面板 -->
+            <div id="custom-screen" class="glass-panel hidden" style="width: 500px;">
+                <h2 style="font-size: 28px; margin-bottom: 20px;">🎨 球员 & 场地定制</h2>
+                
+                <div style="text-align: left; margin-bottom: 20px;">
+                    <label style="color: #00f3ff; font-weight: bold; font-size: 14px; display: block; margin-bottom: 10px;">🏟️ 选择场地主题</label>
+                    <div id="theme-list" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                        <!-- 由 JS 填充 -->
+                    </div>
+                </div>
+
+                <div style="text-align: left; margin-bottom: 25px; display: flex; gap: 20px;">
+                    <div style="flex: 1;">
+                        <label style="color: #00f3ff; font-weight: bold; font-size: 14px; display: block; margin-bottom: 10px;">👤 你的皮肤</label>
+                        <input type="color" id="player-color-picker" value="#00f3ff" style="width: 100%; height: 45px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.2); background: none; cursor: pointer;">
+                    </div>
+                    <div style="flex: 1;">
+                        <label style="color: #ff00ea; font-weight: bold; font-size: 14px; display: block; margin-bottom: 10px;">🎾 球拍颜色</label>
+                        <input type="color" id="racket-color-picker" value="#ffffff" style="width: 100%; height: 45px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.2); background: none; cursor: pointer;">
+                    </div>
+                </div>
+
+                <button id="custom-back-btn" class="secondary-btn" style="background: rgba(255,255,255,0.1); border: 1px solid #666; width: 100%;">确定并返回</button>
+            </div>
+            <div id="game-over-screen" class="glass-panel hidden">
+                <h1 id="winner-text">你赢了!</h1>
+                <p>最终比分 <span id="final-score"></span></p>
+                <div id="game-stats" style="color: rgba(255,255,255,0.6); font-size: 14px; margin-top: 15px; margin-bottom: 25px; text-align: left; display: inline-block;">
+                     <div style="margin-bottom: 5px;">⚡ 全场最高球速: <span id="stat-max-speed" style="color: #00f3ff; font-weight: bold;">0 km/h</span></div>
+                     <div>🏆 最长回合拉锯: <span id="stat-longest-rally" style="color: #ff00ea; font-weight: bold;">0</span></div>
+                </div>
+                <br>
+                <button id="restart-btn" style="width: 100%;">再来一局</button>
+            </div>
+        </div>
+        <canvas id="gameCanvas" width="1100" height="600"></canvas>
+    </div>
+    <script type="module" src="main.js"></script>
+</body>
+</html>
