@@ -49,52 +49,49 @@ export class Shuttlecock {
             // 【开球逻辑新策略】
             if (powerType === 'heavy') {
                 // K 键发球：长距离高远发球，直逼对方底线
-                basePowerX = 10.5;
-                basePowerY = -14.0;
+                basePowerX = 11.5;
+                basePowerY = -14.5;
             } else {
-                // J 键发球：短距发球，落在靠近球网的前半场
-                basePowerX = 6.2;
-                basePowerY = -8.0;
+                // J 键发球：短距发球，落在靠近球网的前半场 (稍增加力度以保证过网并增加深度)
+                basePowerX = 8.8;
+                basePowerY = -9.2;
             }
         } else {
             if (powerType === 'light') {
-                // 【J 键：轻打 / 挑球】
+                // 【J 键：轻打 / 挑球】— 特点：速度慢，抛物线高
                 if (distRatio < 0.4) {
-                    // 前半场：挑球
-                    basePowerX = 6.0 + (0.4 - distRatio) * 5.0; 
-                    basePowerY = -9.0;
+                    // 前半场：网前挑球
+                    basePowerX = 5.2 + (0.4 - distRatio) * 4.0; 
+                    basePowerY = -8.0;
                 } else {
-                    // 后半场：高远球（确保能过网）
-                    basePowerX = 11.5; // 从3.8大幅增加到11.5，确保过网
-                    basePowerY = -12.0; 
+                    // 后半场：防御性高远球
+                    basePowerX = 9.2; 
+                    basePowerY = -11.5; 
                 }
             } else {
-                // 【K 键：重击 / 核心战术键】
+                // 【K 键：重击 / 进攻】
                 if (jumpHeight < 15) {
-                    // 地面击球：高远球 (High Clear) — 仅比普通打球 (J) 快一点点
-                    basePowerX = 6.8 + distRatio * 3.2; // 调整为更接近 J 的水平速度 (之前 5 + 6)
+                    // 地面击球：进攻性平高球 (Flat Clear)
+                    basePowerX = 8.5 + distRatio * 6.0; 
                     basePowerY = -12.5; 
                     import('./config.js').then(({ Visuals }) => { Visuals.shake = 4; });
                 } else {
                     // 空中击球：触发“扣杀 (Smash)”
-                    // 【距离线性关联】：距离网越远，球飞得越远 (增加水平补偿 X，减小下压分量 Y)
-                    basePowerX = 8.5 + jumpBonus * 4.0 + distRatio * 8.0; 
+                    // 【距离线性关联】：越靠近底线，杀球也必须能飞到底线
+                    basePowerX = 9.5 + jumpBonus * 5.0 + distRatio * 8.5; 
                     
                     // 扣杀过网逻辑：
-                    // 后半段 (distRatio > 0.5) 必须有足够的起跳高度才能压得下去并过网
                     if (distRatio > 0.5) {
                         const minJumpYForClear = Physics.NET_Y - 45; 
                         if (p.y > minJumpYForClear) {
-                            basePowerY = 4.2 + jumpBonus * 1.8;
+                            basePowerY = 4.2 + jumpBonus * 2.0;
                         } else {
-                            // 深度补偿：距离越远，下压分量越小，使球飞得更远、更久
-                            basePowerY = 0.5 + jumpBonus * 1.2; 
+                            basePowerY = 0.5 + jumpBonus * 1.5; 
                         }
                     } else {
-                        // 前半段：角度更犀利、更陡峭 (直撞地板)
-                        basePowerY = 2.5 + jumpBonus * 3.5;
+                        basePowerY = 2.8 + jumpBonus * 3.8;
                     }
-                    createFireEffect(this.x, this.y); // 杀球火焰特效
+                    createFireEffect(this.x, this.y); 
                     import('./config.js').then(({ Visuals }) => { Visuals.shake = 6 + jumpBonus * 6; });
                 }
             }

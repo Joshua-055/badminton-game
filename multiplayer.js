@@ -1,4 +1,4 @@
-﻿import { GameState, UI, MPState, remoteKeys, keys } from './config.js';
+import { GameState, UI, MPState, remoteKeys, keys, Physics } from './config.js';
 import { player, ai, shuttle, startGame } from './main.js';
 
 const LOBBY_ID = "BM-LOBBY-REGION-NEON-v2";
@@ -9,6 +9,7 @@ let activeRooms = new Set();
 
 // 联机优化：插值平滑处理
 let targetState = null;
+let lastStateTime = 0;
 
 export function setupMultiplayer() {
     if (!UI.mpMenuBtn) return;
@@ -49,7 +50,7 @@ function registerAsHost(roomId) {
         const p = new Peer();
         p.on('open', () => {
             const lConn = p.connect(LOBBY_ID);
-            lConn.on('open', () => { lConn.send({ type: 'register', roomId: roomId }); setTimeout(() => p.destroy(), 1500); });
+            lConn.on('open', () => { lConn.send({ type: 'register', roomId: roomId }); setTimeout(() => p.destroy(), 15000); });
             lConn.on('error', () => p.destroy());
         });
     };
@@ -93,7 +94,7 @@ function connectToHost(id) {
     UI.mpScreen.innerHTML = `<div style="text-align:center; padding:40px;"><h2>正在连接 ${id}...</h2></div>`;
     peer = new Peer();
     peer.on('open', () => {
-        conn = peer.connect(id, { reliable: true });
+        conn = peer.connect(id, { reliable: false }); // 使用非可靠传输减少延迟带来的积压
         conn.on('open', () => onConnectionEstablished('guest'));
         conn.on('error', () => location.reload());
     });
@@ -105,7 +106,10 @@ function onConnectionEstablished(role) {
     UI.mpScreen.classList.add('hidden');
     conn.on('data', (data) => {
         if (MPState.isHost && data.type === 'input') Object.assign(remoteKeys, data.keys);
-        else if (!MPState.isHost && data.type === 'state') targetState = data.state;
+        else if (!MPState.isHost && data.type === 'state') {
+            targetState = data.state;
+            lastStateTime = Date.now();
+        }
         else if (data.type === 'start') { GameState.winningScore = data.winningScore; if (!MPState.isHost) startGame(true); }
         else if (data.type === 'ping') conn.send({ type: 'pong' });
     });
@@ -115,43 +119,65 @@ function onConnectionEstablished(role) {
         conn.send({ type: 'start', winningScore: GameState.winningScore });
         setInterval(() => {
              if (GameState.state === 'PLAYING' || GameState.state === 'GAMEOVER') {
-                 conn.send({ type: 'state', state: {
-                      player: {x: player.x, y: player.y, racketAngle: player.racketAngle, hasHit: player.hasHit, isSwinging: player.isSwinging },
-                      ai: {x: ai.x, y: ai.y, racketAngle: ai.racketAngle, hasHit: ai.hasHit, isSwinging: ai.isSwinging },
-                      shuttle: {x: shuttle.x, y: shuttle.y, vx: shuttle.vx, vy: shuttle.vy, rotation: shuttle.rotation},
-                      score: GameState.score, isBallDead: GameState.isBallDead, serveTurn: GameState.serveTurn, roundMessage: GameState.roundMessage, gameState: GameState.state, stats: GameState.stats
-                 }});
+                  conn.send({ type: 'state', state: {
+                       player: {x: player.x, y: player.y, vx: player.vx, vy: player.vy, racketAngle: player.racketAngle, hasHit: player.hasHit, isSwinging: player.isSwinging },
+                       ai: {x: ai.x, y: ai.y, vx: ai.vx, vy: ai.vy, racketAngle: ai.racketAngle, hasHit: ai.hasHit, isSwinging: ai.isSwinging },
+                       shuttle: {x: shuttle.x, y: shuttle.y, vx: shuttle.vx, vy: shuttle.vy, rotation: shuttle.rotation, hasBeenHit: shuttle.hasBeenHit },
+                       score: GameState.score, isBallDead: GameState.isBallDead, serveTurn: GameState.serveTurn, roundMessage: GameState.roundMessage, gameState: GameState.state, stats: GameState.stats
+                  }});
              } else { if (conn && conn.open) conn.send({ type: 'ping' }); }
         }, 32); 
     } else {
-        setInterval(() => { if (GameState.state === 'PLAYING' && conn && conn.open) conn.send({ type: 'input', keys: keys }); }, 20);
+        setInterval(() => { if (GameState.state === 'PLAYING' && conn && conn.open) conn.send({ type: 'input', keys: keys }); }, 16); // 提高输入发送频率至 60Hz
     }
 }
 
-// 在 main.js 的循环中调用这个函数实现平滑插值
+// 在 main.js 的循环中调用这个函数实现平滑插值/外推
 export function applyInterpolation() {
     if (!targetState || MPState.isHost) return;
     
-    // 平滑参数 (越小越平滑，但延迟越高)
-    const factor = 0.45;
+    // 平滑参数优化：玩家使用适中插值，羽毛球使用极高插值
+    const pFactor = 0.55;
+    const sFactor = 0.85; 
     
-    player.x += (targetState.player.x - player.x) * factor;
-    player.y += (targetState.player.y - player.y) * factor;
-    player.racketAngle += (targetState.player.racketAngle - player.racketAngle) * factor;
+    player.x += (targetState.player.x - player.x) * pFactor;
+    player.y += (targetState.player.y - player.y) * pFactor;
+    player.vx = targetState.player.vx; 
+    player.vy = targetState.player.vy;
+    player.racketAngle += (targetState.player.racketAngle - player.racketAngle) * pFactor;
     player.hasHit = targetState.player.hasHit;
     player.isSwinging = targetState.player.isSwinging;
     
-    ai.x += (targetState.ai.x - ai.x) * factor;
-    ai.y += (targetState.ai.y - ai.y) * factor;
-    ai.racketAngle += (targetState.ai.racketAngle - ai.racketAngle) * factor;
+    ai.x += (targetState.ai.x - ai.x) * pFactor;
+    ai.y += (targetState.ai.y - ai.y) * pFactor;
+    ai.vx = targetState.ai.vx; 
+    ai.vy = targetState.ai.vy;
+    ai.racketAngle += (targetState.ai.racketAngle - ai.racketAngle) * pFactor;
     ai.hasHit = targetState.ai.hasHit;
     ai.isSwinging = targetState.ai.isSwinging;
     
-    shuttle.x += (targetState.shuttle.x - shuttle.x) * factor;
-    shuttle.y += (targetState.shuttle.y - shuttle.y) * factor;
+    // 羽毛球：如果误差过大直接闪现，否则高频平滑
+    const dist = Math.hypot(targetState.shuttle.x - shuttle.x, targetState.shuttle.y - shuttle.y);
+    if (dist > 150) {
+        shuttle.x = targetState.shuttle.x;
+        shuttle.y = targetState.shuttle.y;
+    } else {
+        shuttle.x += (targetState.shuttle.x - shuttle.x) * sFactor;
+        shuttle.y += (targetState.shuttle.y - shuttle.y) * sFactor;
+    }
+    
     shuttle.vx = targetState.shuttle.vx;
     shuttle.vy = targetState.shuttle.vy;
     shuttle.rotation = targetState.shuttle.rotation;
+    shuttle.hasBeenHit = targetState.shuttle.hasBeenHit;
+
+    // 客户端基础预测逻辑：在等待下一个包时，让球继续飞行
+    if (shuttle.hasBeenHit && !GameState.isBallDead) {
+        shuttle.vy += Physics.SHUTTLE_GRAVITY;
+        shuttle.vx *= Physics.SHUTTLE_DRAG;
+        shuttle.x += shuttle.vx;
+        shuttle.y += shuttle.vy;
+    }
     
     GameState.score.player = targetState.score.player;
     GameState.score.ai = targetState.score.ai;
@@ -161,19 +187,24 @@ export function applyInterpolation() {
     GameState.stats = targetState.stats; 
     
     if (targetState.gameState === 'GAMEOVER' && GameState.state !== 'GAMEOVER') {
-         // 处理 GameOver 显示
          const won = GameState.score.ai > GameState.score.player;
          import('./audio.js').then(({ playWinSound, playLoseSound }) => { won ? playWinSound() : playLoseSound(); });
          UI.winnerText.innerText = won ? "你赢了!" : "对手赢了!";
-         UI.winnerText.style.background = won ? `linear-gradient(45deg, var(--primary), #00ffaa)` : `linear-gradient(45deg, var(--secondary), #ff5555)`;
-         UI.winnerText.style.webkitBackgroundClip = "text";
-         UI.winnerText.style.webkitTextFillColor = "transparent";
          UI.winnerText.style.display = "block";
          UI.finalScoreText.innerText = `${GameState.score.player} - ${GameState.score.ai}`;
          UI.statMaxSpeed.innerText = `${GameState.stats.maxSmashSpeed} km/h`;
          UI.statLongestRally.innerText = GameState.stats.longestRally;
          setTimeout(() => UI.gameOverScreen.classList.remove('hidden'), 1000);
     }
+
+    if (targetState.gameState === 'PLAYING' && GameState.state === 'MENU') {
+         UI.startScreen.classList.add('hidden');
+         UI.gameOverScreen.classList.add('hidden');
+         UI.mpScreen.classList.add('hidden');
+         UI.customScreen.classList.add('hidden');
+         import('./audio.js').then(({ toggleBGM }) => toggleBGM(true));
+    }
+
     GameState.state = targetState.gameState;
     UI.playerScore.innerText = GameState.score.player;
     UI.aiScore.innerText = GameState.score.ai;
