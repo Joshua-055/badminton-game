@@ -148,6 +148,15 @@ export class Player {
             if (keys.j) this.swing(shuttle, 'light');
             if (keys.k) this.swing(shuttle, 'heavy');
 
+            // 跳跃指令 (修复无法跳跃的Bug)
+            if (keys.w || keys.space) {
+                if (onGround || this.coyoteTime > 0) {
+                    this.jump();
+                } else {
+                    this.jumpBuffer = 10; // 增加预输入容错，落地瞬间自动起跳
+                }
+            }
+
             // 计时器
             if (onGround) {
                 this.coyoteTime = 8;
@@ -263,8 +272,8 @@ export class Player {
                       GameState.isBallDead = false;
                       
                       // Teleport shuttle to racket location to guarantee hit
-                      shuttle.x = this.x + (this.isAI ? -this.width : this.width) + 15;
-                      shuttle.y = this.y + this.height/2;
+                      shuttle.x = this.x + (this.isAI ? -this.width - 25 : this.width + 25);
+                      shuttle.y = this.y + this.height/2 - 10;
 
                       shuttle.hit(this, true); 
                       this.hasHit = true;
