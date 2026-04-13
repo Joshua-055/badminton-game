@@ -8,14 +8,34 @@ const tracks = [
 ];
 let currentTrackIdx = 0;
 let bgmAudio = null;
+let noiseBuffer = null;
+
+function getNoiseBuffer() {
+    if (noiseBuffer) return noiseBuffer;
+    const bufferSize = audioCtx.sampleRate * 0.5;
+    noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+    }
+    return noiseBuffer;
+}
 
 export function initAudio() {
-    if (audioCtx) return;
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
 }
 
 export function playTone(freq, type, dur, baseVol) {
+    if (!audioCtx) initAudio();
     if (!audioCtx) return;
+    // 确保在播放音效前恢复上下文
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
     const vol = baseVol * GameState.volume;
     if (vol <= 0.001) return;
     const osc = audioCtx.createOscillator();
@@ -36,41 +56,80 @@ export function playTone(freq, type, dur, baseVol) {
 
 export function playWalkSound() { playTone(150 + Math.random() * 50, 'sine', 0.05, 0.04); }
 export function playJumpSound() {
+    if (!audioCtx) initAudio();
     if (!audioCtx) return;
-    const vol = 0.1 * GameState.volume;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
+    const vol = 0.3 * GameState.volume;
     if (vol <= 0.001) return;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(300, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
-    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.15);
-}
 
-export function playSwingSound(isHeavy = false) {
-    if (!audioCtx) return;
-    const vol = (isHeavy ? 0.15 : 0.1) * GameState.volume;
-    if (vol <= 0.001) return;
+    const now = audioCtx.currentTime;
+    
+    // 1. 低频“咚”声 (Thud)
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(isHeavy ? 400 : 800, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.1);
-    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-    gain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.05);
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
+    gain.gain.setValueAtTime(vol, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
     osc.connect(gain);
     gain.connect(audioCtx.destination);
     osc.start();
-    osc.stop(audioCtx.currentTime + 0.15);
+    osc.stop(now + 0.15);
+
+    // 2. 高频摩擦声 (Friction)
+    const source = audioCtx.createBufferSource();
+    source.buffer = getNoiseBuffer();
+    const noiseFilter = audioCtx.createBiquadFilter();
+    noiseFilter.type = 'highpass';
+    noiseFilter.frequency.setValueAtTime(1000, now);
+    const noiseGain = audioCtx.createGain();
+    noiseGain.gain.setValueAtTime(vol * 0.3, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    source.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(audioCtx.destination);
+    source.start(now);
+    source.stop(now + 0.05);
+}
+
+export function playSwingSound(isHeavy = false) {
+    if (!audioCtx) initAudio();
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
+    const vol = (isHeavy ? 0.4 : 0.25) * GameState.volume;
+    if (vol <= 0.001) return;
+
+    const now = audioCtx.currentTime;
+    const source = audioCtx.createBufferSource();
+    source.buffer = getNoiseBuffer();
+
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    // 挥拍模拟：从高频到低频的快速扫频（Whoosh）
+    filter.frequency.setValueAtTime(isHeavy ? 1500 : 2500, now);
+    filter.frequency.exponentialRampToValueAtTime(isHeavy ? 400 : 800, now + 0.15);
+    filter.Q.setValueAtTime(1.0, now);
+
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(vol, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + (isHeavy ? 0.25 : 0.18));
+
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    source.start(now);
+    source.stop(now + 0.25);
 }
 
 export function playHitSound(isHeavy = false) {
+    if (!audioCtx) initAudio();
     if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
     const vol = (isHeavy ? 0.4 : 0.25) * GameState.volume;
     if (vol <= 0.001) return;
     const osc = audioCtx.createOscillator();
@@ -99,6 +158,8 @@ export function toggleBGM(play) {
 
     if (play) {
         bgmAudio.volume = GameState.volume * 0.8;
+        // 在播放 BGM 时也尝试恢复一次 AudioContext 权限
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
         bgmAudio.play().catch(e => console.log("BGM Play failed:", e));
     } else {
         bgmAudio.pause();

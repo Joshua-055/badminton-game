@@ -10,6 +10,7 @@ export let ai = new Player(true);
 export let shuttle = new Shuttlecock();
 
 let lastTime = 0;
+let roundResetTimeout = null;
 
 // 控制输入监听
 window.addEventListener('keydown', (e) => {
@@ -87,7 +88,8 @@ function checkWinCondition() {
         }
     }
     if (GameState.state === 'PLAYING') {
-         setTimeout(() => { if (GameState.state === 'PLAYING') resetRound(); }, 2800);
+         if (roundResetTimeout) clearTimeout(roundResetTimeout);
+         roundResetTimeout = setTimeout(() => { if (GameState.state === 'PLAYING') resetRound(); }, 2800);
     }
 }
 
@@ -114,7 +116,7 @@ function handleScore() {
 }
 
 function resetRound() {
-    GameState.isBallDead = false;
+    GameState.isBallDead = true; 
     GameState.roundMessage = "";
     
     // 每一局位置强制重置到发球位，防止堆在网前的Bug
@@ -143,6 +145,7 @@ export function startGame(isGuest = false) {
     UI.customScreen.classList.add('hidden');
     
     toggleBGM(true);
+    if (roundResetTimeout) clearTimeout(roundResetTimeout);
     if (!isGuest) resetRound();
     UI.startBtn.blur(); UI.restartBtn.blur();
 }
@@ -188,7 +191,6 @@ function gameLoop() {
                 player.update(shuttle); ai.update(shuttle); shuttle.update();
                 checkCollisions();
                 if (!GameState.isBallDead) {
-                    // 仅在球被开出后（hasBeenHit为true）才进行落地判分，防止闪烁Bug
                     if (shuttle.hasBeenHit && shuttle.y >= Physics.GROUND_Y - shuttle.radius) handleScore();
                     if (shuttle.x < -100 || shuttle.x > canvas.width + 100) handleScore();
                 }
@@ -210,6 +212,10 @@ function gameLoop() {
              }
         }
     } else {
+        // 关键修复：Guest 即使在 MENU 状态也要尝试同步，防止卡死在主界面
+        if (MPState.isMultiplayer && !MPState.isHost) {
+            applyInterpolation();
+        }
         player.draw(); ai.draw(); shuttle.draw();
     }
 
